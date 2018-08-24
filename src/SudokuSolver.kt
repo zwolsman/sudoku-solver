@@ -1,233 +1,120 @@
-import kotlin.math.floor
+const val BLANK = 0
+const val WIDTH = 9
+const val HEIGHT = 9
 
-const val BLANK = -1
-const val B = BLANK
+class Sudoku(vararg rows: Iterable<Int>) {
 
-class Sudoku {
+    private val mask = Array(WIDTH * HEIGHT) { 0 }
+    val input = Array(WIDTH * HEIGHT) { BLANK }
 
-    class Cell {
+    private val options = (1..9).toSet()
 
-        constructor(value: Int = BLANK) {
-            IsChangeable = value == BLANK
-            this.value = value
-        }
+    private var solution = emptyArray<Int>()
 
-        var IsChangeable:Boolean = false
-        var history: MutableSet<Int> = mutableSetOf()
-        var value: Int = 0
-            set(value) {
-                if(this.IsChangeable || field == 0) {
-                    history.add(value)
-                    field = value
-                } else if(field != 0) {
-                    println("TRYING TO CHANGE VALUE")
-                }
-            }
-    }
-
-
-    var cells = Array(9) {
-        Array(9) {
-            Cell()
-        }
-    }
-
-    val isSolved:Boolean
-        get() = cells.flatten().none { it.value == BLANK }
-
-    constructor(vararg rows: Iterable<Int>) {
+    init {
         check(rows.count() == 9) { "Sudoku doesn't have 9 rows" }
-        check(rows.all { it.count() == 9 }) { "Every row should be 9 cells" }
+        check(rows.all { it.count() == 9 }) { "Every row should be 9 input" }
         check(rows.all { it.all { c -> (BLANK..9).contains(c) } }) { "Cell values range from BLANK to 9" }
-
-
-        for((rowIndex, row) in rows.withIndex()) {
-            for((cellIndex, value) in row.withIndex()) {
-                cells[rowIndex][cellIndex] = Cell(value)
+        for ((rowIndex, row) in rows.withIndex()) {
+            for ((cellIndex, value) in row.withIndex()) {
+                if (value == BLANK)
+                    continue
+                val index = WIDTH * rowIndex + cellIndex
+                mask[index] = 1
+                input[index] = value
             }
         }
-
     }
 
-    fun solve()
-    {
+    fun solve(): Array<Int> {
+        val mask = mask.mapIndexed { index, i -> if (i == 0) -1 else index }.filter { it != -1 }
+        val indices = ((0 until WIDTH * HEIGHT) - mask)
 
-        var x = 0
-        var y = 0
-
-        val nextCell = {
-            println("Next")
-            x += 1
-            if(x == 9)
-            {
-                x = 0
-                y += 1
-            }
+        var i = 0
+        val next = {
+            i += 1
         }
-
-        val previousCell = {
-            println("Previous")
-            x -= 1
-            if(x < 0) {
-                x = 8
-                y -= 1
-            }
-
+        val previous = {
+            i -= 1
         }
+        solution = input.clone()
 
-        val resetCell = {
-            println("Resetting cell")
-            if(cells[y][x].IsChangeable)
-                cells[y][x].value = -1
-        }
+        do {
+            if (i >= indices.size)
+                break
 
-        var tries = 0
-
-        println("Start")
-        cells.print()
-        println()
-
-        while (y != 9) {
-            var cell = cells[y][x]
-
-            if(cell.value == -1)
-                cell.value = 1
-
-            if(cell.value == 10) {
-
-                do {
-                    resetCell()
-                    previousCell()
-                    cell = cells[y][x]
-                } while(cell.value == 9 || !cell.IsChangeable)
-                cell.value += 1
-                println("Incrementing")
-            }
-
-            if(isValid(x,y)) {
-                do {
-                    nextCell()
-                    if(y == 9)
-                        break
-                    cell = cells[y][x]
-                } while(!cell.IsChangeable)
-            } else {
-                println("Incrementing same cell")
-                cell.value += 1
-            }
-
-            cells.print()
-            println()
-
-            tries++
-        }
-
-        println("Completed! It took $tries actions")
-    }
-
-    fun isValid(x: Int, y: Int) : Boolean {
-        return options(x,y).contains(cells[y][x].value)
-    }
-
-    fun options(x: Int, y: Int): Set<Int> {
-        var options = (1..9).toMutableSet()
-
-        //check the x
-        for(i in 0 until 9) {
-            val v = cells[y][i].value
-            if(v != BLANK && x != i)
-            {
-                options.remove(v)
-            }
-        }
-
-        //check the y
-        for(i in 0 until 9) {
-            val v = cells[i][x].value
-
-            if(v != BLANK && y != i)
-            {
-                options.remove(v)
-            }
-        }
-
-
-        val offsetX = (floor(x / 3f) * 3).toInt()
-        val offsetY = (floor(y / 3f) * 3).toInt()
-
-        val xrange = offsetX..offsetX+2
-        val yrange = offsetY..offsetY+2
-
-        for(i in xrange) {
-            for(j in yrange) {
-
-
-                val v = cells[j][i].value
-                if(v != BLANK && y != j && i != x)
-                {
-                    options.remove(v)
+            val index = indices[i]
+            do {
+                solution[index]++
+                if (isValid(index)) {
+                    next()
+                    break
+                } else if (solution[index] == 10) {
+                    solution[index] = 0
+                    previous()
+                    break
                 }
-            }
-        }
+            } while (true)
 
-        return options.toSet()
+        } while (true)
+
+        return solution
     }
+
+    private fun options(index: Int): Set<Int> {
+        val offset = WIDTH * (index.y - index.y % 3) + (index.x - index.x % 3)
+        val xrange = (0 until 9).filter { it != index.x }.map { WIDTH * index.y + it }
+        val yrange = (0 until 9).filter { it != index.y }.map { WIDTH * it + index.x }
+        val srange = (0..2).flatMap { y -> (0..2).map { x -> WIDTH * y + x + offset } }.filter { it != index }
+
+        val xses = solution.slice(xrange)
+        val yses = solution.slice(yrange)
+        val square = solution.slice(srange)
+
+        return options - (xses + yses + square)
+    }
+
+    private fun isValid(index: Int) = options(index).contains(solution[index])
+
+    private val Int.x
+        get() = this % WIDTH
+    private val Int.y
+        get() = (this - this.x) / HEIGHT
 }
 
-private fun Array<Array<Sudoku.Cell>>.print() {
-    this.forEach {
-        kotlin.io.println(it.joinToString {
-            if(it.value == BLANK) " " else it.value.toString()
-        })
-    }
+private fun Array<Int>.print() {
+    for (i in 0 until this.size step HEIGHT)
+        println(this.slice(i until (i + WIDTH)).joinToString())
+    println()
 }
 
-
+const val B = BLANK
 fun main(args: Array<String>) {
-    val row: List<Int> = listOf(1, 2, 3)
 
+    val s1 = Sudoku(listOf(4, B, B, B, 1, B, B, 5, 6),
+            listOf(6, B, B, B, 7, 2, B, B, B),
+            listOf(B, B, 9, B, B, B, 4, B, B),
+            listOf(B, 4, B, B, B, B, B, B, B),
+            listOf(7, 6, B, B, 3, B, B, 1, 2),
+            listOf(B, B, B, B, B, B, B, 7, B),
+            listOf(B, B, 4, B, B, B, 8, B, B),
+            listOf(B, B, B, 5, 4, B, B, B, 3),
+            listOf(9, 8, B, B, 6, B, B, B, 1))
 
-//    val sudoku = Sudoku(
-//            listOf(BLANK,  6, BLANK, BLANK, BLANK, BLANK, BLANK, BLANK, BLANK),
-//            listOf(BLANK, BLANK,  4,  5, BLANK, BLANK,  9, BLANK,  2),
-//            listOf(BLANK,  2,  8,  6, BLANK, BLANK,  1,  7, BLANK),
-//
-//            listOf(BLANK, 5, 1, BLANK, 6, BLANK, 4, 8, BLANK),
-//            listOf(BLANK, BLANK, BLANK, BLANK, 4, 3, BLANK, 5, BLANK),
-//            listOf(BLANK, 7, 9, BLANK, BLANK, BLANK, BLANK, BLANK, BLANK),
-//
-//            listOf(BLANK, BLANK, BLANK, BLANK, 3, BLANK, BLANK, 1, BLANK),
-//            listOf(7, BLANK, BLANK, BLANK, 5, 2, BLANK, BLANK, BLANK),
-//            listOf(2, BLANK, 6, 7, BLANK, BLANK, BLANK, 3, 8)
-//    )
+    val s2 = Sudoku(listOf(B, 6, B, B, B, B, B, B, B),
+            listOf(B, B, 4, 5, B, B, 9, B, 2),
+            listOf(B, 2, 8, 6, B, B, 1, 7, B),
+            listOf(B, 5, 1, B, 6, B, 4, 8, B),
+            listOf(B, B, B, B, 4, 3, B, 5, B),
+            listOf(B, 7, 9, B, B, B, B, B, B),
+            listOf(B, B, B, B, 3, B, B, 1, B),
+            listOf(7, B, B, B, 5, 2, B, B, B),
+            listOf(2, B, 6, 7, B, B, B, 3, 8))
 
-    //http://www.extremesudoku.info/sudoku.html
-//    val s = Sudoku(
-//            listOf(4,B,B,B,1,B,B,5,6),
-//            listOf(6,B,B,B,7,2,B,B,B),
-//            listOf(B,B, 9,B,B,B,4,B,B),
-//            listOf(B,4,B,B,B,B,B,B,B),
-//            listOf(7,6,B,B,3,B,B,1,2),
-//            listOf(B,B,B,B,B,B,B,7,B),
-//            listOf(B,B,4,B,B,B,8,B,B),
-//            listOf(B,B,B,5,4,B,B,B,3),
-//            listOf(9,8,B,B,6,B,B,B,1)
-//    )
-//
-//    s.solve()
-//
-
-    val s = Sudoku(
-            listOf(3,4,B,B,B,B,B,B,5),
-            listOf(8,B,B,B,B,2,B,B,B),
-            listOf(B,B,B,B,5,7,3,B,B),
-            listOf(B,8,B,B,6,B,5,B,B),
-            listOf(B,9,B,B,B,B,B,3,B),
-            listOf(B,B,4,B,2,B,B,9,B),
-            listOf(B,B,6,2,8,B,B,B,B),
-            listOf(B,B,B,5,B,B,B,B,9),
-            listOf(1,B,B,B,B,B,B,2,4)
-    )
-
-    s.solve()
+    for (s in listOf(s1, s2)) {
+        println("Input")
+        s.input.print()
+        println("Solution")
+        s.solve().print()
+    }
 }
